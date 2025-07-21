@@ -8,6 +8,8 @@ import ta
 import torch
 import torch.nn as nn
 from sklearn.preprocessing import MinMaxScaler
+import ccxt
+import time
 
 # ----- CONFIGURATION ----- #
 TIMEFRAME = '15m'
@@ -42,6 +44,24 @@ def load_fake_spx_data():
         'low': prices - np.random.normal(0, 1.0, size=LOOKBACK_CANDLES),
         'volume': np.random.uniform(1000, 2000, size=LOOKBACK_CANDLES)
     })
+    return df
+
+def load_binance_data(symbol='SP500USD/USDT', timeframe='15m', lookback_candles=192):
+    exchange = ccxt.binance({
+        'enableRateLimit': True,
+    })
+    
+    # Load markets and check symbol
+    markets = exchange.load_markets()
+    if symbol not in markets:
+        st.warning(f"Symbol {symbol} not found on Binance. Falling back to BTC/USDT.")
+        symbol = 'BTC/USDT'
+
+    since = exchange.milliseconds() - lookback_candles * 15 * 60 * 1000  # 48 hours ago
+    ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=since)
+    
+    df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+    df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
     return df
 
 # ----- FEATURE ENGINEERING ----- #
@@ -92,7 +112,7 @@ def predict_next_move(model, recent_data):
 # ----- STREAMLIT UI ----- #
 st.title("📈 SPX/USDT 15m AI Market Predictor")
 
-data = load_fake_spx_data()
+data = load_binance_data(symbol='SP500USD/USDT', timeframe='15m', lookback_candles=192)
 data = add_technical_indicators(data)
 X, y, scaler = prepare_data(data)
 model = train_model(X, y)
